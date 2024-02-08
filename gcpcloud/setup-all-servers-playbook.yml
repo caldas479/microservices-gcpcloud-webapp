@@ -1,0 +1,568 @@
+---
+- hosts: targets
+  become: yes
+  tasks:
+    - name: Copy /etc/hosts file
+      copy:
+        src: /etc/hosts
+        dest: /etc/hosts
+        
+- hosts: targets
+  gather_facts: no
+  remote_user: ubuntu
+  become: yes
+  become_method: sudo
+
+  pre_tasks:
+    - name: Remove require tty - alt
+      lineinfile:
+        regexp: "requiretty"
+        dest: /etc/sudoers.d/os_defaults
+        state: absent
+
+    - name: Validate the sudoers file before saving  not to require password
+      lineinfile:
+        dest: /etc/sudoers
+        state: present
+        regexp: '^%ADMIN ALL='
+        line: '%ADMIN ALL=(ALL) NOPASSWD: ALL'
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: install ssh key
+      authorized_key:
+        user: ubuntu
+        key: "{{ lookup('file', '/home/vagrant/.ssh/id_rsa.pub') }}"
+        state: present
+
+- name: Install Docker on VM
+  hosts: databaseservice
+  become: true
+
+  tasks:
+    - name: Install aptitude using apt
+      apt: name=aptitude state=latest update_cache=yes force_apt_get=yes
+
+    - name: Install required system packages
+      apt: name={{ item }} state=latest update_cache=yes
+      loop: [ 'apt-transport-https', 'ca-certificates', 'curl', 'software-properties-common', 'python3-pip', 'virtualenv', 'python3-setuptools']
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu bionic stable
+        state: present
+
+    - name: Update apt and install docker-ce
+      apt: update_cache=yes name=docker-ce state=latest
+
+    - name: Install Docker Module for Python
+      pip:
+        name: docker
+
+- name: Run Docker Container on VM
+  hosts: databaseservice
+  become: yes
+
+  tasks:
+    - name: Pull MongoDB Docker image
+      docker_image:
+        name: mongo:4.1.1-xenial
+        source: pull
+
+    - name: Run Docker Container
+      command: docker run -d -p 27017:27017 --network host --name mymongo mongo:4.1.1-xenial
+
+- hosts: microservices
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Node.js dependencies
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - curl
+        - software-properties-common
+
+    - name: Add NodeSource GPG key
+      apt_key:
+        url: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+        state: present
+
+    - name: Add NodeSource repository for Node.js 18.x
+      apt_repository:
+        repo: "deb https://deb.nodesource.com/node_18.x {{ ansible_distribution_release }} main"
+        state: present
+        update_cache: yes
+        filename: nodesource
+
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Install build-essential
+      apt:
+        name: build-essential
+        state: present
+
+- hosts: getservice
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: Ensure the "get-service" directory exists in /home/vagrant
+      file:
+        path: /home/vagrant/get-service
+        state: directory
+
+    - name: Copy the folder from management node to microservice node
+      synchronize:
+        src: /home/vagrant/gcpcloud/microservices/get-quote-microservice
+        dest: /home/vagrant/get-service
+
+    - name: Run npm install in the specific directory
+      command: npm install
+      args:
+        chdir: /home/vagrant/get-service/get-quote-microservice
+
+    - name: Install PM2 globally
+      command: npm install -g pm2
+
+    - name: Start the Node.js application using PM2
+      command: pm2 start index.js -f --no-autorestart
+      args:
+        chdir: /home/vagrant/get-service/get-quote-microservice
+
+- hosts: addservice
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: Ensure the "add-service" directory exists in /home/vagrant
+      file:
+        path: /home/vagrant/add-service
+        state: directory
+
+    - name: Copy the folder from management node to microservice node
+      synchronize:
+        src: /home/vagrant/gcpcloud/microservices/add-quote-microservice
+        dest: /home/vagrant/add-service
+
+    - name: Run npm install in the specific directory
+      command: npm install
+      args:
+        chdir: /home/vagrant/add-service/add-quote-microservice
+
+    - name: Install PM2 globally
+      command: npm install -g pm2
+
+    - name: Start the Node.js application using PM2
+      command: pm2 start index.js -f --no-autorestart
+      args:
+        chdir: /home/vagrant/add-service/add-quote-microservice
+
+- hosts: deleteservice
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: Ensure the "delete-service" directory exists in /home/vagrant
+      file:
+        path: /home/vagrant/delete-service
+        state: directory
+
+    - name: Copy the folder from management node to microservice node
+      synchronize:
+        src: /home/vagrant/gcpcloud/microservices/delete-quote-microservice
+        dest: /home/vagrant/delete-service
+
+    - name: Run npm install in the specific directory
+      command: npm install
+      args:
+        chdir: /home/vagrant/delete-service/delete-quote-microservice
+
+    - name: Install PM2 globally
+      command: npm install -g pm2
+
+    - name: Start the Node.js application using PM2
+      command: pm2 start index.js -f --no-autorestart
+      args:
+        chdir: /home/vagrant/delete-service/delete-quote-microservice
+
+- hosts: frontendservice
+  gather_facts: yes
+  become: yes
+  tasks:
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Node.js dependencies
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - curl
+        - software-properties-common
+
+    - name: Add NodeSource GPG key
+      apt_key:
+        url: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+        state: present
+
+    - name: Add NodeSource repository for Node.js 18.x
+      apt_repository:
+        repo: "deb https://deb.nodesource.com/node_18.x {{ ansible_distribution_release }} main"
+        state: present
+        update_cache: yes
+        filename: nodesource
+
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Install build-essential
+      apt:
+        name: build-essential
+        state: present
+
+- name: Frontend Start
+  hosts: frontendservice
+  become: yes
+  tasks:
+
+    - name: Ensure the "app" directory exists in /home/vagrant
+      file:
+        path: /home/vagrant/app
+        state: directory
+
+    - name: Copy the folder from management node to frontend node
+      synchronize:
+        src: /home/vagrant/gcpcloud/frontend/quote-app-ui
+        dest: /home/vagrant/app
+
+    - name: Install project dependencies using npm
+      command: "npm install"
+      args:
+        chdir: /home/vagrant/app/quote-app-ui
+
+    - name: Install PM2 globally
+      command: npm install -g pm2
+
+    - name: Start the frontend application
+      command: "pm2 start npm -- start -f --no-autorestart"
+      args:
+        chdir: /home/vagrant/app/quote-app-ui
+
+- name: Install node-exporter in all Services
+  hosts: targetsmonitoring
+  become: true
+  vars:
+    node_exporter_version: "1.1.2"
+    node_exporter_bin: /usr/local/bin/node_exporter
+    node_exporter_user: node-exporter
+    node_exporter_group: "{{ node_exporter_user }}"
+    node_exporter_dir_conf: /etc/node_exporter
+
+  tasks:
+    - name: check if node exporter exist
+      stat:
+        path: "{{ node_exporter_bin }}"
+      register: __check_node_exporter_present
+
+    - name: create node exporter user
+      user:
+        name: "{{ node_exporter_user }}"
+        append: true
+        shell: /usr/sbin/nologin
+        system: true
+        create_home: false
+
+    - name: create node exporter config dir
+      file:
+        path: "{{ node_exporter_dir_conf }}"
+        state: directory
+        owner: "{{ node_exporter_user }}"
+        group: "{{ node_exporter_group }}"
+
+    - name: if node exporter exist get version
+      shell: "cat /etc/systemd/system/node_exporter.service | grep Version | sed s/'.*Version '//g"
+      when: __check_node_exporter_present.stat.exists == true
+      changed_when: false
+      register: __get_node_exporter_version
+      
+    - name: download and unzip node exporter if not exist
+      unarchive:
+        src: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/
+        remote_src: yes
+        validate_certs: no
+
+    - name: move the binary to the final destination
+      copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: "{{ node_exporter_bin }}"
+        owner: "{{ node_exporter_user }}"
+        group: "{{ node_exporter_group }}"
+        mode: 0755
+        remote_src: yes
+      when: __check_node_exporter_present.stat.exists == false or not __get_node_exporter_version.stdout == node_exporter_version
+
+    - name: clean
+      file:
+        path: /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/
+        state: absent
+
+    - name: install service
+      template:
+        src: templates/node-exporter/node_exporter.service.j2
+        dest: /etc/systemd/system/node_exporter.service
+        owner: root
+        group: root
+        mode: 0755
+
+    - meta: flush_handlers
+
+    - name: service always started
+      systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+
+- name: Install prometheus in monitoring Servers
+  hosts: monitorservice
+  become: true
+  vars:
+    prometheus_dir_configuration: "/etc/prometheus"
+    prometheus_retention_time: "365d"
+    prometheus_scrape_interval: "30s"
+    prometheus_node_exporter: true
+    prometheus_node_exporter_group: "all"
+    prometheus_env: "production"
+    prometheus_var_config:
+      global:
+        scrape_interval: "{{ prometheus_scrape_interval }}"
+        evaluation_interval: 5s
+        external_labels:
+          env: '{{ prometheus_env }}'
+      scrape_configs:
+        - job_name: prometheus
+          scrape_interval: 5m
+          static_configs:
+            - targets: ['{{ inventory_hostname }}:9090']
+
+  tasks:
+    - name: update and install prometheus
+      apt:
+        name: prometheus
+        state: latest
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: prometheus args
+      template:
+        src: templates/prometheus/prometheus.j2
+        dest: /etc/default/prometheus
+        mode: 0644
+        owner: root
+        group: root
+    
+    - name: restart_prometheus
+      systemd:
+        name: prometheus
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+    - name: prometheus configuration file
+      template:
+        src: templates/prometheus/prometheus.yml.j2
+        dest: "{{ prometheus_dir_configuration }}/prometheus.yml"
+        mode: 0755
+        owner: prometheus
+        group: prometheus
+    - name: reload_prometheus
+      uri:
+        url: http://localhost:9090/-/reload
+        method: POST
+        status_code: 200
+
+    - name: start prometheus
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+
+- name: Install grafana in monitor servers
+  hosts: monitorservice
+  become: true
+  vars:
+    grafana_admin_password: "abc1234"
+
+  tasks:
+    - name: install gpg
+      apt:
+        name: gnupg,software-properties-common
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: add gpg hey
+      apt_key:
+        url: "https://packages.grafana.com/gpg.key"
+        validate_certs: no
+
+    - name: add repository
+      apt_repository:
+        repo: "deb https://packages.grafana.com/oss/deb stable main"             
+        state: present
+        validate_certs: no
+
+    - name: install grafana
+      apt:
+        name: grafana
+        state: latest
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Copy the datasource file to provisioning
+      copy: 
+        src: /home/vagrant/gcpcloud/templates/grafana/datasource.yml
+        dest: /etc/grafana/provisioning/datasources
+
+    - name: Copy the dashboard file to provisioning
+      copy: 
+        src: /home/vagrant/gcpcloud/templates/grafana/service_dashboard.json
+        dest: /etc/grafana/provisioning/dashboards
+
+    - name: Copy the dashboard config file to provisioning
+      copy: 
+        src: /home/vagrant/gcpcloud/templates/grafana/dashboard.yml
+        dest: /etc/grafana/provisioning/dashboards    
+
+    - name: start service grafana-server
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: yes
+
+    - name: wait for service up
+      uri:
+        url: "http://127.0.0.1:3000"
+        status_code: 200
+      register: __result
+      until: __result.status == 200
+      retries: 120
+      delay: 1
+      
+    - name: change admin password for grafana gui
+      shell : "grafana-cli admin reset-admin-password {{ grafana_admin_password }}"
+      register: __command_admin
+      changed_when: __command_admin.rc != 0
+
+- hosts: loadbalancers
+  gather_facts: true
+  remote_user: ubuntu
+  become: yes
+  become_method: sudo
+
+  tasks:
+    - name: add HAPROXY Repository
+      apt_repository:
+        repo: ppa:vbernat/haproxy-2.1
+        update_cache: true
+
+    - name: install haproxy and socat
+      apt:
+        pkg: ['haproxy', 'socat']
+        state: latest
+
+    - name: enable haproxy
+      lineinfile:
+        path: /etc/default/haproxy
+        regexp: "^ENABLED.+$"
+        line: "ENABLED=1"
+        state: present
+
+  handlers:
+  - name: restart haproxy
+    service:
+      name: haproxy
+      state: restarted
+
+- hosts: load_balancer1
+  become: yes
+  become_method: sudo
+
+  tasks:
+  - name: haproxy config
+    template:
+      src: /home/vagrant/gcpcloud/templates/load-balancers/haproxy-get.cfg.j2
+      dest: /etc/haproxy/haproxy.cfg
+      mode: 0644
+      validate: haproxy -f %s -c -q
+    notify: restart haproxy
+
+  handlers:
+  - name: restart haproxy
+    service:
+      name: haproxy
+      state: restarted
+
+- hosts: load_balancer2
+  become: yes
+  become_method: sudo
+
+  tasks:
+  - name: haproxy config
+    template:
+      src: /home/vagrant/gcpcloud/templates/load-balancers/haproxy-add.cfg.j2
+      dest: /etc/haproxy/haproxy.cfg
+      mode: 0644
+      validate: haproxy -f %s -c -q
+    notify: restart haproxy
+    
+  handlers:
+  - name: restart haproxy
+    service:
+      name: haproxy
+      state: restarted
+
+- hosts: load_balancer3
+  become: yes
+  become_method: sudo
+
+  tasks:
+  - name: haproxy config
+    template:
+      src: /home/vagrant/gcpcloud/templates/load-balancers/haproxy-delete.cfg.j2
+      dest: /etc/haproxy/haproxy.cfg
+      mode: 0644
+      validate: haproxy -f %s -c -q
+    notify: restart haproxy
+    
+  handlers:
+  - name: restart haproxy
+    service:
+      name: haproxy
+      state: restarted
+
+- hosts: loadbalancers
+  become: yes
+  become_method: sudo
+
+  tasks:
+  - name: Ensure HAProxy is started and enabled on boot.
+    service:
+      name: haproxy
+      state: started
+      enabled: yes
+

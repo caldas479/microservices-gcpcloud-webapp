@@ -1,0 +1,102 @@
+# file: gcphosts
+# for GCP tenant hosts file
+
+# Modify the line with the ansible_host for the public IP address of your Project
+# For that, un-comment the following line before running instances configuration
+add-service1 ansible_host=34.90.5.139 ansible_user=ubuntu ansible_connection=ssh
+add-service2 ansible_host=34.147.0.219 ansible_user=ubuntu ansible_connection=ssh
+database ansible_host=34.32.184.128 ansible_user=ubuntu ansible_connection=ssh
+delete-service1 ansible_host=35.204.230.217 ansible_user=ubuntu ansible_connection=ssh
+delete-service2 ansible_host=34.32.185.221 ansible_user=ubuntu ansible_connection=ssh
+frontend ansible_host=34.147.195.123 ansible_user=ubuntu ansible_connection=ssh
+get-service1 ansible_host=35.204.136.210 ansible_user=ubuntu ansible_connection=ssh
+get-service2 ansible_host=34.32.235.60 ansible_user=ubuntu ansible_connection=ssh
+load_balancer1 ansible_host=34.142.63.72 ansible_user=ubuntu ansible_connection=ssh
+load_balancer2 ansible_host=35.246.88.118 ansible_user=ubuntu ansible_connection=ssh
+load_balancer3 ansible_host=34.89.125.191 ansible_user=ubuntu ansible_connection=ssh
+monitor ansible_host=34.89.37.199 ansible_user=ubuntu ansible_connection=ssh
+
+# Contains the load-balancers servers
+[loadbalancers]
+load_balancer1
+load_balancer2
+load_balancer3
+
+# Contains the monitor servers
+[monitorservice]
+monitor
+
+# Contains the frontend servers
+[frontendservice]
+frontend
+
+# Contains the databse servers
+[databaseservice]
+database
+
+# Contains the get-service servers
+[getservice]
+get-service1
+get-service2
+
+# Contains the add-service servers
+[addservice]
+add-service1
+add-service2
+
+# Contains the delete-service servers
+[deleteservice]
+delete-service1
+delete-service2
+
+# Contains the add-service servers
+[microservices]
+get-service1
+add-service1
+delete-service1
+get-service2
+add-service2
+delete-service2
+
+# Contains the nodees that need node
+[nodejsnodes]
+get-service1
+add-service1
+delete-service1
+get-service2
+add-service2
+delete-service2
+frontend
+
+# Groups specific servers
+[targets]
+database
+get-service1 
+add-service1
+delete-service1
+get-service2 
+add-service2
+delete-service2
+load_balancer1
+load_balancer2
+load_balancer3
+frontend
+monitor
+
+# Groups specific servers
+[targetsmonitoring]
+database
+get-service1 
+add-service1
+delete-service1
+get-service2 
+add-service2
+delete-service2
+load_balancer1
+load_balancer2
+load_balancer3
+frontend
+
+# The local Management host
+[mgmt]
+localhost   ansible_connection=local
